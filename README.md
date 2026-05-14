@@ -8,7 +8,7 @@ Solution pour Jean (CTO) — Analyse d'infrastructure, détection d'anomalies, r
 |---|---|---|
 | Orchestration pipeline | **LangGraph** | Open source |
 | Dashboard | **Streamlit** | Free tier |
-| LLM recommandations | **Claude Haiku 4.5** (Anthropic) | Free tier |
+| LLM recommandations | **Groq** (Llama, etc.) | Free tier |
 | Visualisations | **Plotly** | Open source |
 
 ## Architecture — 5 nœuds séquentiels
@@ -26,7 +26,7 @@ Nœud 2 · analysis_node    → avg / min / max / p95 par métrique
 Nœud 3 · anomaly_node     → Seuils warning/critical + état services
     │
     ▼
-Nœud 4 · reco_node        → Claude Haiku (ou règles Python si pas de clé)
+Nœud 4 · reco_node        → Groq (ou règles Python si pas de clé)
     │
     ▼
 Nœud 5 · report_node      → Rapport JSON + health score
@@ -45,9 +45,10 @@ cd infra-monitor
 # 2. Installer les dépendances
 pip install -r requirements.txt
 
-# 3. (Optionnel) Configurer la clé Claude
-export ANTHROPIC_API_KEY="sk-ant-..."
-# Ou la saisir directement dans la sidebar du dashboard
+# 3. (Optionnel) Clé Groq — fichier local config.py (gitignoré) ou variable d'environnement
+export GROQ_API_KEY="gsk_..."
+# Optionnel : export GROQ_MODEL="llama-3.3-70b-versatile"
+# Ou saisir la clé dans la sidebar du dashboard
 
 # 4. Lancer le dashboard
 streamlit run app.py
@@ -71,23 +72,23 @@ Ouvrir http://localhost:8501
    - New app → sélectionner votre repo → `app.py`
    - Cliquer **Deploy**
 
-3. **Ajouter la clé API Claude**
+3. **Ajouter la clé API Groq**
    - Dans Streamlit Cloud : **Settings → Secrets**
    - Coller :
      ```toml
-     ANTHROPIC_API_KEY = "sk-ant-xxxxxxxxxx"
+     GROQ_API_KEY = "gsk_xxxxxxxxxx"
      ```
 
 4. **Charger vos données**
    - Uploader votre `data.json` depuis la sidebar
    - Cliquer **Lancer le pipeline**
 
-## Obtenir une clé Claude gratuite
+## Obtenir une clé Groq
 
-1. Aller sur https://console.anthropic.com
+1. Aller sur https://console.groq.com
 2. Créer un compte
-3. API Keys → **Create Key**
-4. Le free tier inclut un crédit de démarrage (suffisant pour ce projet)
+3. **API Keys** → créer une clé (`gsk_...`)
+4. Choisir un modèle (défaut dans le code : `llama-3.3-70b-versatile`, surcharge possible avec `GROQ_MODEL`)
 
 ## Format du fichier JSON d'entrée
 
@@ -134,6 +135,6 @@ infra_monitor/
     ├── ingestion.py          # Nœud 1
     ├── analysis.py           # Nœud 2
     ├── anomaly.py            # Nœud 3
-    ├── reco.py               # Nœud 4 — Claude Haiku / fallback règles
+    ├── reco.py               # Nœud 4 — Groq / fallback règles
     └── report.py             # Nœud 5
 ```

@@ -1,5 +1,14 @@
 import sys, os
+
 sys.path.insert(0, os.path.dirname(__file__))
+
+try:
+    from config import GROQ_API_KEY as _LOCAL_GROQ_KEY
+
+    if str(_LOCAL_GROQ_KEY or "").strip():
+        os.environ.setdefault("GROQ_API_KEY", str(_LOCAL_GROQ_KEY).strip())
+except ImportError:
+    pass
 
 import json
 import streamlit as st
@@ -12,8 +21,8 @@ st.set_page_config(page_title="Infrastructure Monitor", page_icon="🖥️", lay
 
 # Inject Streamlit Cloud secrets into env
 try:
-    if "ANTHROPIC_API_KEY" in st.secrets:
-        os.environ["ANTHROPIC_API_KEY"] = st.secrets["ANTHROPIC_API_KEY"]
+    if "GROQ_API_KEY" in st.secrets:
+        os.environ["GROQ_API_KEY"] = st.secrets["GROQ_API_KEY"]
 except Exception:
     pass
 
@@ -22,19 +31,20 @@ with st.sidebar:
     st.title("🖥️ Infra Monitor")
     uploaded = st.file_uploader("Fichier JSON", type=["json"])
 
-    api_key = os.getenv("ANTHROPIC_API_KEY", "")
+    api_key = os.getenv("GROQ_API_KEY", "")
     if not api_key:
-        api_key = st.text_input("Anthropic API Key", type="password", placeholder="sk-ant-...")
+        api_key = st.text_input("Groq API Key", type="password", placeholder="gsk_...")
         if api_key:
-            os.environ["ANTHROPIC_API_KEY"] = api_key
+            os.environ["GROQ_API_KEY"] = api_key
     else:
         st.success("✅ Clé API détectée")
 
-    run = st.button("▶ Lancer le pipeline", type="primary", use_container_width=True)
+    run = st.button("▶ Lancer le pipeline", type="primary", width="stretch")
 
     with st.expander("Déploiement Streamlit Cloud"):
-        st.code("ANTHROPIC_API_KEY = 'sk-ant-...'", language="toml")
-        st.caption("Settings → Secrets → coller ci-dessus")
+        st.caption("En local : remplissez `config.py` (gitignoré) ou copiez `config.example.py`.")
+        st.code("GROQ_API_KEY = 'gsk_...'", language="toml")
+        st.caption("Cloud : Settings → Secrets → coller ci-dessus")
 
 
 @st.cache_data(show_spinner=False)
@@ -58,7 +68,7 @@ if run:
         st.error("Aucune donnée disponible.")
         st.stop()
     with st.spinner("Pipeline en cours…"):
-        result = run_pipeline(json.dumps(raw), os.getenv("ANTHROPIC_API_KEY", ""))
+        result = run_pipeline(json.dumps(raw), os.getenv("GROQ_API_KEY", ""))
     st.session_state["report"] = result["report"]
     st.session_state["records"] = raw
 
@@ -99,29 +109,29 @@ with tab1:
     with c1:
         fig = px.line(df, x="timestamp", y=["cpu_usage", "memory_usage"], title="CPU & RAM (%)")
         fig.add_hline(y=85, line_dash="dash", line_color="red", annotation_text="Seuil 85%")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
     with c2:
         fig2 = px.line(df, x="timestamp", y="latency_ms", title="Latence (ms)")
         fig2.add_hline(y=300, line_dash="dash", line_color="red", annotation_text="Seuil 300ms")
-        st.plotly_chart(fig2, use_container_width=True)
+        st.plotly_chart(fig2, width="stretch")
     c3, c4 = st.columns(2)
     with c3:
         fig3 = px.line(df, x="timestamp", y=["disk_usage", "temperature_celsius"], title="Disque (%) & Température (°C)")
-        st.plotly_chart(fig3, use_container_width=True)
+        st.plotly_chart(fig3, width="stretch")
     with c4:
         fig4 = px.line(df, x="timestamp", y="error_rate", title="Taux d'erreur")
         fig4.add_hline(y=0.08, line_dash="dash", line_color="red", annotation_text="Seuil 0.08")
-        st.plotly_chart(fig4, use_container_width=True)
+        st.plotly_chart(fig4, width="stretch")
 
     rows = [{"Métrique": m, **s} for m, s in metrics.items()]
-    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+    st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
 
 with tab2:
     c1, c2 = st.columns(2)
     with c1:
         bm = anom["by_metric"]
         fig_b = px.bar(x=list(bm.values()), y=list(bm.keys()), orientation="h", title="Anomalies par métrique")
-        st.plotly_chart(fig_b, use_container_width=True)
+        st.plotly_chart(fig_b, width="stretch")
     with c2:
         fig_p = go.Figure(go.Pie(
             labels=["Critiques", "Warnings"],
@@ -129,7 +139,7 @@ with tab2:
             marker_colors=["#dc3545", "#fd7e14"], hole=0.5,
         ))
         fig_p.update_layout(title="Sévérité", height=300)
-        st.plotly_chart(fig_p, use_container_width=True)
+        st.plotly_chart(fig_p, width="stretch")
 
     anom_full = [a for a in report.get("anomalies_list", []) if a]
     adf = pd.DataFrame([
@@ -153,11 +163,15 @@ with tab2:
                 all_anomalies.append({"Timestamp": r["timestamp"], "Métrique": metric, "Valeur": val, "Sévérité": "warning"})
 
     filtered = [a for a in all_anomalies if a["Sévérité"] in sev_filter]
-    st.dataframe(pd.DataFrame(filtered), use_container_width=True, height=300, hide_index=True)
+    st.dataframe(pd.DataFrame(filtered), width="stretch", height=300, hide_index=True)
 
 with tab3:
-    llm = bool(os.getenv("ANTHROPIC_API_KEY"))
-    st.caption(f"{'✅ Claude Haiku 4.5 (Anthropic)' if llm else 'ℹ️ Règles Python — ajoutez une clé API pour l'enrichissement IA'}")
+    llm = bool(os.getenv("GROQ_API_KEY"))
+    st.caption(
+        "✅ Recommandations via Groq (LLM)"
+        if llm
+        else "ℹ️ Règles Python — ajoutez une clé Groq (config.py ou sidebar) pour l'enrichissement IA"
+    )
     for r in recos:
         icon = "🔴" if r.get("priority") == "Critique" else "🟠" if r.get("priority") == "Haute" else "🔵"
         with st.expander(f"{icon} [{r.get('id')}] {r.get('title')}", expanded=(r.get("priority") == "Critique")):
@@ -181,7 +195,7 @@ with tab4:
                    "threshold": {"line": {"color": "red", "width": 3}, "value": 99}},
         ))
         fig_g.update_layout(height=220, margin=dict(t=30, b=10, l=20, r=20))
-        cols[i].plotly_chart(fig_g, use_container_width=True)
+        cols[i].plotly_chart(fig_g, width="stretch")
         cols[i].caption(f"✅ {stats['online']} online · ⚠️ {stats['degraded']} dégradés · 🔴 {stats['offline']} offline")
 
 with tab5:

@@ -1,81 +1,232 @@
-import os, json, anthropic
+import json
+import os
+import re
+from collections import Counter
+
+from groq import Groq
+
+
+def _groq_api_key():
+    key = os.getenv("GROQ_API_KEY", "").strip()
+    if key:
+        return key
+    try:
+        from config import GROQ_API_KEY
+
+        return str(GROQ_API_KEY or "").strip()
+    except ImportError:
+        return ""
+
+
+def _groq_model():
+    return os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile").strip()
+
+
+def _parse_json_array(text: str):
+    text = (text or "").strip()
+    if "```" in text:
+        for block in text.split("```"):
+            block = block.strip()
+            if block.lower().startswith("json"):
+                block = block[4:].lstrip()
+            if block.startswith("["):
+                text = block
+                break
+    m = re.search(r"\[[\s\S]*\]", text)
+    if m:
+        text = m.group(0)
+    return json.loads(text)
+
+
+def _normalize_recommendations(raw):
+    """Garde uniquement les objets complets ; attend entre 3 et 8 entrées."""
+    if not isinstance(raw, list):
+        return None
+    required = ("id", "priority", "category", "title", "observation", "action", "effort", "impact")
+    out = []
+    for i, item in enumerate(raw):
+        if not isinstance(item, dict):
+            continue
+        if not all(k in item and str(item[k]).strip() for k in required):
+            continue
+        rid = str(item["id"]).strip() or f"R{i + 1:02d}"
+        out.append(
+            {
+                "id": rid[:8],
+                "priority": str(item["priority"]).strip(),
+                "category": str(item["category"]).strip(),
+                "title": str(item["title"]).strip()[:120],
+                "observation": str(item["observation"]).strip(),
+                "action": str(item["action"]).strip(),
+                "effort": str(item["effort"]).strip(),
+                "impact": str(item["impact"]).strip(),
+            }
+        )
+        if len(out) >= 8:
+            break
+    if len(out) < 3:
+        return None
+    return out[:8]
+
 
 def reco_node(state):
-    metrics  = state["metrics"]
+    metrics = state["metrics"]
     services = state["services"]
     anomalies = state["anomalies"]
 
-    api_key = os.getenv("ANTHROPIC_API_KEY", "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")
+    api_key = _groq_api_key()
     if not api_key:
         return {"recommendations": _rules(metrics, services)}
 
     try:
-        client = anthropic.Anthropic(api_key=api_key)
-        context = {
-            "metrics_p95": {k: v["p95"] for k, v in metrics.items()},
-            "metrics_max": {k: v["max"] for k, v in metrics.items()},
-            "services_availability": {k: v["availability"] for k, v in services.items()},
-            "critical_count": sum(1 for a in anomalies if a["severity"] == "critical"),
-        }
-        msg = client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=1024,
-            messages=[{"role": "user", "content": (
-                f"Infrastructure metrics over 10 days:\n{json.dumps(context, indent=2)}\n\n"
-                "Return ONLY a valid JSON array of 5 recommendations. "
-                "Each object: id, priority (Critique/Haute/Moyenne), category, title, observation, action, effort, impact."
-            )}],
-        )
-        text = msg.content[0].text.strip().strip("```json").strip("```").strip()
-        return {"recommendations": json.loads(text)}
+        recos = _groq_recommendations(api_key, metrics, services, anomalies)
+        if recos:
+            return {"recommendations": recos}
     except Exception:
-        return {"recommendations": _rules(metrics, services)}
+        pass
+    return {"recommendations": _rules(metrics, services)}
+
+
+def _groq_recommendations(api_key, metrics, services, anomalies):
+    critical = [a for a in anomalies if a.get("severity") == "critical"]
+    warning = [a for a in anomalies if a.get("severity") == "warning"]
+    top_metrics = dict(Counter(a.get("metric", "") for a in anomalies).most_common(12))
+
+    context = {
+        "metrics_p95": {k: round(v.get("p95", 0), 4) for k, v in metrics.items()},
+        "metrics_max": {k: round(v.get("max", 0), 4) for k, v in metrics.items()},
+        "metrics_avg": {k: round(v.get("avg", 0), 4) for k, v in metrics.items()},
+        "services": {
+            name: {
+                "availability_pct": s.get("availability"),
+                "online": s.get("online"),
+                "degraded": s.get("degraded"),
+                "offline": s.get("offline"),
+            }
+            for name, s in services.items()
+        },
+        "anomalies": {
+            "total": len(anomalies),
+            "critical_count": len(critical),
+            "warning_count": len(warning),
+            "by_metric": top_metrics,
+        },
+        "recent_critical_samples": critical[:12],
+    }
+
+    system = """Tu rédiges des recommandations d'exploitation pour des ingénieurs qui lisent un rapport interne.
+Style : ton direct, phrases courtes. Pas d'emojis. Pas d'introduction du type "Dans le cadre de…", "Il est essentiel de…", "En tant qu'expert…". Pas de listes numérotées 1. 2. 3. dans les champs texte.
+Les titres doivent ressembler à des titres d'actions Jira ou de tickets d'astreinte, pas à du marketing.
+Les observations doivent s'appuyer sur des chiffres ou faits présents dans les données fournies (cite les valeurs quand c'est pertinent).
+Le champ action : 2 ou 3 formulations impératives courtes, séparées par des points-virgules ; pas de markdown."""
+
+    user = f"""Données de monitoring (résumé) :
+{json.dumps(context, ensure_ascii=False, indent=2)}
+
+Tâche : produire exactement 5 recommandations, triées de la plus urgente à la moins urgente, en t'appuyant uniquement sur ce qui apparaît dans les données (métriques, services, anomalies). Ne invente pas d'incidents absents des chiffres.
+
+Format de sortie : un seul tableau JSON (array), sans texte avant ni après, sans bloc markdown.
+Chaque élément du tableau doit avoir exactement ces clés : "id" (ex. R01), "priority" (une seule valeur parmi : Critique, Haute, Moyenne), "category", "title" (max 70 caractères), "observation", "action", "effort", "impact".
+effort : estimation réaliste du type "2 h", "1 j", "3–5 j".
+impact : une phrase courte orientée résultat opérationnel, sans superlatifs ni promesse vague."""
+
+    client = Groq(api_key=api_key)
+    completion = client.chat.completions.create(
+        model=_groq_model(),
+        max_tokens=2048,
+        temperature=0.2,
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+    )
+    text = completion.choices[0].message.content or ""
+    raw = _parse_json_array(text)
+    return _normalize_recommendations(raw)
 
 
 def _rules(metrics, services):
     recos = []
 
     def add(priority, category, title, observation, action, effort, impact):
-        recos.append({"id": f"R{len(recos)+1:02d}", "priority": priority, "category": category,
-                      "title": title, "observation": observation, "action": action,
-                      "effort": effort, "impact": impact})
+        recos.append(
+            {
+                "id": f"R{len(recos) + 1:02d}",
+                "priority": priority,
+                "category": category,
+                "title": title,
+                "observation": observation,
+                "action": action,
+                "effort": effort,
+                "impact": impact,
+            }
+        )
 
     if metrics.get("cpu_usage", {}).get("p95", 0) > 80:
-        add("Critique", "CPU", "Saturation CPU",
+        add(
+            "Critique",
+            "CPU",
+            "Saturation CPU",
             f"p95={metrics['cpu_usage']['p95']}% max={metrics['cpu_usage']['max']}%",
-            "Activer autoscaling horizontal. Auditer processus (htop). Load balancer actif/actif.",
-            "2–4h", "−40% charge CPU")
+            "Activer autoscaling horizontal ; auditer processus (htop) ; load balancer actif/actif.",
+            "2–4 h",
+            "Réduction sensible de la charge CPU sur les pics.",
+        )
 
     if metrics.get("memory_usage", {}).get("p95", 0) > 80:
-        add("Critique", "Mémoire", "Pression mémoire",
+        add(
+            "Critique",
+            "Mémoire",
+            "Pression mémoire",
             f"p95={metrics['memory_usage']['p95']}% max={metrics['memory_usage']['max']}%",
-            "Analyser fuites mémoire. Ajuster limites JVM/Node. Optimiser TTL Redis.",
-            "4–8h", "Stabilisation mémoire")
+            "Analyser fuites mémoire ; ajuster limites JVM/Node ; revoir TTL Redis.",
+            "4–8 h",
+            "Stabilisation mémoire et risque de swap réduit.",
+        )
 
     if metrics.get("latency_ms", {}).get("p95", 0) > 250:
-        add("Haute", "Latence", "Latence réseau élevée",
-            f"p95={metrics['latency_ms']['p95']}ms max={metrics['latency_ms']['max']}ms",
-            "Activer cache HTTP (Nginx). Vérifier keep-alive. Analyser slow query log.",
-            "3–6h", "−50% latence P95")
+        add(
+            "Haute",
+            "Latence",
+            "Latence réseau élevée",
+            f"p95={metrics['latency_ms']['p95']} ms max={metrics['latency_ms']['max']} ms",
+            "Mettre en cache HTTP (Nginx) ; vérifier keep-alive ; analyser slow query log.",
+            "3–6 h",
+            "Baisse attendue sur la latence p95.",
+        )
 
     if metrics.get("disk_usage", {}).get("p95", 0) > 80:
-        add("Critique", "Stockage", "Disque critique",
+        add(
+            "Critique",
+            "Stockage",
+            "Disque critique",
             f"p95={metrics['disk_usage']['p95']}% max={metrics['disk_usage']['max']}%",
-            "Purger logs > 30j. Compresser backups. Alerte à 80%.",
-            "1–2h", "+20Go libérés")
+            "Purger les logs anciennes ; compresser les backups ; alerte disque à 80 %.",
+            "1–2 h",
+            "Espace disque récupéré rapidement.",
+        )
 
     if metrics.get("temperature_celsius", {}).get("p95", 0) > 75:
-        add("Haute", "Matériel", "Surchauffe",
-            f"p95={metrics['temperature_celsius']['p95']}°C",
-            "Vérifier ventilation baie. Nettoyer filtres. Réduire densité.",
-            "1j", "Prévention panne")
+        add(
+            "Haute",
+            "Matériel",
+            "Surchauffe",
+            f"p95={metrics['temperature_celsius']['p95']} °C",
+            "Contrôler ventilation baie ; nettoyer filtres ; réduire densité de charge.",
+            "1 j",
+            "Risque panne thermique diminué.",
+        )
 
     for svc, stats in services.items():
         if stats["availability"] < 99:
-            add("Critique" if stats["offline"] > 0 else "Haute", "Disponibilité",
+            add(
+                "Critique" if stats["offline"] > 0 else "Haute",
+                "Disponibilité",
                 f"Indisponibilité {svc}",
                 f"{svc} à {stats['availability']}% ({stats['offline']} offline)",
-                f"Healthcheck + redémarrage auto (systemd). Failover secondaire.",
-                "4–8h", f"SLA {svc} > 99.9%")
+                "Healthcheck systématique ; redémarrage auto (systemd) ; prévoir failover.",
+                "4–8 h",
+                f"Remonter la dispo {svc} vers l'objectif SLA.",
+            )
 
     return recos
