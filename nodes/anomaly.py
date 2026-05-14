@@ -1,8 +1,3 @@
-"""
-Nœud 3 — Détection d'anomalies : seuils configurables + état des services.
-"""
-from state import InfraState
-
 THRESHOLDS = {
     "cpu_usage":           {"warn": 70,   "crit": 85},
     "memory_usage":        {"warn": 75,   "crit": 85},
@@ -13,51 +8,21 @@ THRESHOLDS = {
     "io_wait":             {"warn": 5,    "crit": 8},
 }
 
-LABELS = {
-    "cpu_usage":           "CPU élevé",
-    "memory_usage":        "Pression RAM",
-    "latency_ms":          "Latence élevée",
-    "disk_usage":          "Disque critique",
-    "error_rate":          "Taux d'erreur",
-    "temperature_celsius": "Surchauffe",
-    "io_wait":             "I/O wait élevé",
-}
-
-
-def anomaly_node(state: InfraState) -> dict:
-    records = state["records"]
+def anomaly_node(state):
     anomalies = []
-
-    for r in records:
-        ts = r["timestamp"]
+    for r in state["records"]:
         for metric, levels in THRESHOLDS.items():
             val = r.get(metric)
             if val is None:
                 continue
             if val >= levels["crit"]:
-                sev, thr = "critical", levels["crit"]
+                anomalies.append({"ts": r["timestamp"], "metric": metric, "value": val, "severity": "critical"})
             elif val >= levels["warn"]:
-                sev, thr = "warning", levels["warn"]
-            else:
-                continue
-            anomalies.append({
-                "timestamp": ts,
-                "metric": metric,
-                "value": val,
-                "severity": sev,
-                "threshold": thr,
-                "message": f"{LABELS[metric]} : {val} (seuil {sev} = {thr})",
-            })
+                anomalies.append({"ts": r["timestamp"], "metric": metric, "value": val, "severity": "warning"})
 
         for svc, status in r.get("service_status", {}).items():
-            if status in ("offline", "degraded"):
-                anomalies.append({
-                    "timestamp": ts,
-                    "metric": f"service_{svc}",
-                    "value": status,
-                    "severity": "critical" if status == "offline" else "warning",
-                    "threshold": "online",
-                    "message": f"Service {svc} {status}",
-                })
+            if status != "online":
+                sev = "critical" if status == "offline" else "warning"
+                anomalies.append({"ts": r["timestamp"], "metric": f"service_{svc}", "value": status, "severity": sev})
 
     return {"anomalies": anomalies}
