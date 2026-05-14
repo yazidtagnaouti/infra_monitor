@@ -5,7 +5,7 @@ def reco_node(state):
     services = state["services"]
     anomalies = state["anomalies"]
 
-    api_key = os.getenv("ANTHROPIC_API_KEY", "")
+    api_key = os.getenv("ANTHROPIC_API_KEY", "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")
     if not api_key:
         return {"recommendations": _rules(metrics, services)}
 
