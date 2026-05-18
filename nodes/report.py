@@ -6,9 +6,15 @@ def report_node(state):
     anomalies = state["anomalies"]
     metrics   = state["metrics"]
 
-    penalties  = max(0, metrics.get("cpu_usage",    {}).get("p95", 0) - 70) * 0.5
-    penalties += max(0, metrics.get("memory_usage", {}).get("p95", 0) - 70) * 0.4
-    penalties += max(0, metrics.get("disk_usage",   {}).get("p95", 0) - 70) * 0.3
+    # rough heuristic, revisit
+    cpu_p95 = metrics.get("cpu_usage", {}).get("p95", 0)
+    mem_p95 = metrics.get("memory_usage", {}).get("p95", 0)
+    disk_p95 = metrics.get("disk_usage", {}).get("p95", 0)
+
+    penalties = 0
+    penalties += max(0, cpu_p95 - 70) * 0.5
+    penalties += max(0, mem_p95 - 70) * 0.4
+    penalties += max(0, disk_p95 - 70) * 0.3
 
     analysis_summary = {
         **(state.get("analysis_summary") or {}),

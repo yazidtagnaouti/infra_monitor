@@ -2,7 +2,6 @@ import json
 import os
 import re
 from collections import Counter
-
 from groq import Groq
 
 
@@ -39,7 +38,7 @@ def _parse_json_array(text: str):
 
 
 def _normalize_recommendations(raw):
-    """Garde uniquement les objets complets ; attend entre 3 et 8 entrées."""
+    # expects 3-8 items with all keys filled
     if not isinstance(raw, list):
         return None
     required = ("id", "priority", "category", "title", "observation", "action", "effort", "impact")
@@ -49,7 +48,7 @@ def _normalize_recommendations(raw):
             continue
         if not all(k in item and str(item[k]).strip() for k in required):
             continue
-        rid = str(item["id"]).strip() or f"R{i + 1:02d}"
+        rid = str(item["id"]).strip() or "R{:02d}".format(i + 1)
         out.append(
             {
                 "id": rid[:8],
@@ -73,6 +72,7 @@ def reco_node(state):
     metrics = state["metrics"]
     services = state["services"]
     anomalies = state["anomalies"]
+    # TODO: maybe cache this when same metrics hash
 
     api_key = _groq_api_key()
     if not api_key:
@@ -123,7 +123,7 @@ Le champ action : 2 ou 3 formulations impératives courtes, séparées par des p
     user = f"""Données de monitoring (résumé) :
 {json.dumps(context, ensure_ascii=False, indent=2)}
 
-Tâche : produire exactement 5 recommandations, triées de la plus urgente à la moins urgente, en t'appuyant uniquement sur ce qui apparaît dans les données (métriques, services, anomalies). Ne invente pas d'incidents absents des chiffres.
+Tâche : produire exactement 5 recommandations, triées de la plus urgente à la moins urgente, en t'appuyant uniquement sur ce qui apparaît dans les données (métriques, services, anomalies). Ne invente pas d'incidents absents des chiffres — basically stick to what's in the json.
 
 Format de sortie : un seul tableau JSON (array), sans texte avant ni après, sans bloc markdown.
 Chaque élément du tableau doit avoir exactement ces clés : "id" (ex. R01), "priority" (une seule valeur parmi : Critique, Haute, Moyenne), "category", "title" (max 70 caractères), "observation", "action", "effort", "impact".
@@ -146,6 +146,9 @@ impact : une phrase courte orientée résultat opérationnel, sans superlatifs n
 
 
 def _rules(metrics, services):
+    if not metrics:
+        return []
+
     recos = []
 
     def add(priority, category, title, observation, action, effort, impact):
@@ -174,15 +177,10 @@ def _rules(metrics, services):
         )
 
     if metrics.get("memory_usage", {}).get("p95", 0) > 80:
-        add(
-            "Critique",
-            "Mémoire",
-            "Pression mémoire",
-            f"p95={metrics['memory_usage']['p95']}% max={metrics['memory_usage']['max']}%",
+        add("Critique", "Mémoire", "Pression mémoire",
+            "p95={}% max={}%".format(metrics['memory_usage']['p95'], metrics['memory_usage']['max']),
             "Analyser fuites mémoire ; ajuster limites JVM/Node ; revoir TTL Redis.",
-            "4–8 h",
-            "Stabilisation mémoire et risque de swap réduit.",
-        )
+            "4–8 h", "Stabilisation mémoire et risque de swap réduit.")
 
     if metrics.get("latency_ms", {}).get("p95", 0) > 250:
         add(
@@ -196,15 +194,16 @@ def _rules(metrics, services):
         )
 
     if metrics.get("disk_usage", {}).get("p95", 0) > 80:
-        add(
-            "Critique",
-            "Stockage",
-            "Disque critique",
-            f"p95={metrics['disk_usage']['p95']}% max={metrics['disk_usage']['max']}%",
-            "Purger les logs anciennes ; compresser les backups ; alerte disque à 80 %.",
-            "1–2 h",
-            "Espace disque récupéré rapidement.",
-        )
+        recos.append({
+            "id": "R{:02d}".format(len(recos) + 1),
+            "priority": "Critique",
+            "category": "Stockage",
+            "title": "Disque critique",
+            "observation": f"p95={metrics['disk_usage']['p95']}% max={metrics['disk_usage']['max']}%",
+            "action": "Purger les logs anciennes ; compresser les backups ; alerte disque à 80 %.",
+            "effort": "1–2 h",
+            "impact": "Espace disque récupéré rapidement.",
+        })
 
     if metrics.get("temperature_celsius", {}).get("p95", 0) > 75:
         add(
@@ -219,8 +218,9 @@ def _rules(metrics, services):
 
     for svc, stats in services.items():
         if stats["availability"] < 99:
+            prio = "Critique" if stats["offline"] > 0 else "Haute"
             add(
-                "Critique" if stats["offline"] > 0 else "Haute",
+                prio,
                 "Disponibilité",
                 f"Indisponibilité {svc}",
                 f"{svc} à {stats['availability']}% ({stats['offline']} offline)",

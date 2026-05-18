@@ -2,8 +2,8 @@ from collections import defaultdict
 
 from nodes.anomaly import THRESHOLDS
 
-METRICS = ["cpu_usage", "memory_usage", "latency_ms", "disk_usage",
-           "error_rate", "temperature_celsius", "io_wait"]
+METRICS = ['cpu_usage', 'memory_usage', 'latency_ms', 'disk_usage',
+           'error_rate', 'temperature_celsius', 'io_wait']
 
 
 def p95(vals):
@@ -30,7 +30,7 @@ def _service_status(stats):
     return "ok"
 
 
-def build_analysis_summary(records, metrics, services):
+def make_summary(records, metrics, services):
     summary_metrics = {
         name: {**stats, "status": _metric_status(stats["p95"], name)}
         for name, stats in metrics.items()
@@ -52,8 +52,12 @@ def build_analysis_summary(records, metrics, services):
     for name, s in summary_services.items():
         if s["status"] != "ok":
             highlights.append(
-                f"{name}: {s['availability_pct']}% disponible "
-                f"({s['offline']} offline, {s['degraded']} dégradé)"
+                "{name}: {avail}% disponible ({off} offline, {deg} dégradé)".format(
+                    name=name,
+                    avail=s["availability_pct"],
+                    off=s["offline"],
+                    deg=s["degraded"],
+                )
             )
     return {
         "period": {"start": records[0]["timestamp"], "end": records[-1]["timestamp"]},
@@ -78,6 +82,7 @@ def analysis_node(state):
     }
 
     services = {}
+    # add more services here if needed
     for svc in ["database", "api_gateway", "cache"]:
         statuses = [r["service_status"][svc] for r in records if svc in r.get("service_status", {})]
         total = len(statuses)
@@ -88,5 +93,5 @@ def analysis_node(state):
             "availability": round(statuses.count("online") / total * 100, 1),
         }
 
-    analysis_summary = build_analysis_summary(records, metrics, services)
+    analysis_summary = make_summary(records, metrics, services)
     return {"metrics": metrics, "services": services, "analysis_summary": analysis_summary}

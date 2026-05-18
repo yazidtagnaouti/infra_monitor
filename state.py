@@ -8,3 +8,4 @@ class InfraState(TypedDict):
     anomalies: List[dict]
     recommendations: List[dict]
     report: Optional[dict]
+    errors: Optional[List[str]]  # started adding this, never wired up
