@@ -16,6 +16,23 @@ import plotly.express as px
 import plotly.graph_objects as go
 import pandas as pd
 from pipeline import build_pipeline
+from nodes.anomaly import THRESHOLDS
+
+SEVERITY_COLORS = {
+    "critical": "#C62828",
+    "warning": "#EF6C00",
+}
+SEVERITY_LABELS = {
+    "critical": "Critique",
+    "warning": "Warning",
+}
+SEVERITY_COLOR_MAP = {
+    **SEVERITY_COLORS,
+    "Critique": SEVERITY_COLORS["critical"],
+    "Critiques": SEVERITY_COLORS["critical"],
+    "Warning": SEVERITY_COLORS["warning"],
+    "Warnings": SEVERITY_COLORS["warning"],
+}
 
 st.set_page_config(page_title="Infrastructure Monitor", page_icon="🖥️", layout="wide")
 
@@ -127,43 +144,103 @@ with tab1:
     st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
 
 with tab2:
-    c1, c2 = st.columns(2)
-    with c1:
-        bm = anom["by_metric"]
-        fig_b = px.bar(x=list(bm.values()), y=list(bm.keys()), orientation="h", title="Anomalies par métrique")
-        st.plotly_chart(fig_b, width="stretch")
-    with c2:
-        fig_p = go.Figure(go.Pie(
-            labels=["Critiques", "Warnings"],
-            values=[anom["critical"], anom["warning"]],
-            marker_colors=["#dc3545", "#fd7e14"], hole=0.5,
-        ))
-        fig_p.update_layout(title="Sévérité", height=300)
-        st.plotly_chart(fig_p, width="stretch")
-
-    anom_full = [a for a in report.get("anomalies_list", []) if a]
-    adf = pd.DataFrame([
-        {"ts": r["timestamp"], "metric": m, "value": v, "severity": s}
-        for r in records
-        for m, levels in {"cpu_usage": (70,85), "memory_usage": (75,85),
-                          "latency_ms": (200,300), "disk_usage": (75,85)}.items()
-        if (v := r.get(m)) and v >= (s := "critical" if v >= levels[1] else "warning" if v >= levels[0] else None, levels[0])[1] and s
-    ] if False else [])
-
-    sev_filter = st.multiselect("Sévérité", ["critical", "warning"], default=["critical", "warning"])
     all_anomalies = []
     for r in records:
-        from nodes.anomaly import THRESHOLDS
         for metric, levels in THRESHOLDS.items():
             val = r.get(metric)
-            if not val: continue
+            if val is None:
+                continue
             if val >= levels["crit"]:
-                all_anomalies.append({"Timestamp": r["timestamp"], "Métrique": metric, "Valeur": val, "Sévérité": "critical"})
+                all_anomalies.append(
+                    {"Timestamp": r["timestamp"], "Métrique": metric, "Valeur": val, "Sévérité": "critical"}
+                )
             elif val >= levels["warn"]:
-                all_anomalies.append({"Timestamp": r["timestamp"], "Métrique": metric, "Valeur": val, "Sévérité": "warning"})
+                all_anomalies.append(
+                    {"Timestamp": r["timestamp"], "Métrique": metric, "Valeur": val, "Sévérité": "warning"}
+                )
+        for svc, status in r.get("service_status", {}).items():
+            if status == "online":
+                continue
+            sev = "critical" if status == "offline" else "warning"
+            all_anomalies.append(
+                {
+                    "Timestamp": r["timestamp"],
+                    "Métrique": f"service_{svc}",
+                    "Valeur": status,
+                    "Sévérité": sev,
+                }
+            )
 
+    bar_rows = []
+    for a in all_anomalies:
+        bar_rows.append(
+            {
+                "Métrique": a["Métrique"],
+                "Sévérité": SEVERITY_LABELS[a["Sévérité"]],
+                "count": 1,
+            }
+        )
+    df_bar = (
+        pd.DataFrame(bar_rows)
+        .groupby(["Métrique", "Sévérité"], as_index=False)["count"]
+        .sum()
+        .sort_values("count", ascending=True)
+    )
+
+    c1, c2 = st.columns(2)
+    with c1:
+        fig_b = px.bar(
+            df_bar,
+            x="count",
+            y="Métrique",
+            color="Sévérité",
+            orientation="h",
+            title="Anomalies par métrique",
+            color_discrete_map=SEVERITY_COLOR_MAP,
+            category_orders={"Sévérité": ["Warning", "Critique"]},
+        )
+        fig_b.update_layout(
+            barmode="stack",
+            legend_title="Sévérité",
+            coloraxis_showscale=False,
+            plot_bgcolor="rgba(0,0,0,0)",
+        )
+        st.plotly_chart(fig_b, width="stretch")
+    with c2:
+        fig_p = go.Figure(
+            go.Pie(
+                labels=["Critiques", "Warnings"],
+                values=[anom["critical"], anom["warning"]],
+                marker={"colors": [SEVERITY_COLORS["critical"], SEVERITY_COLORS["warning"]]},
+                hole=0.5,
+            )
+        )
+        fig_p.update_layout(title="Répartition par sévérité", height=300)
+        st.plotly_chart(fig_p, width="stretch")
+
+    sev_filter = st.multiselect(
+        "Sévérité",
+        ["critical", "warning"],
+        default=["critical", "warning"],
+        format_func=lambda s: SEVERITY_LABELS[s],
+    )
     filtered = [a for a in all_anomalies if a["Sévérité"] in sev_filter]
-    st.dataframe(pd.DataFrame(filtered), width="stretch", height=300, hide_index=True)
+    df_anom = pd.DataFrame(filtered)
+    if not df_anom.empty:
+        df_anom = df_anom.assign(
+            Sévérité=df_anom["Sévérité"].map(SEVERITY_LABELS)
+        )
+
+        def _severity_style(val):
+            color = SEVERITY_COLOR_MAP.get(val, "")
+            if not color:
+                return ""
+            return f"background-color: {color}; color: #FFFFFF; font-weight: 600"
+
+        styled = df_anom.style.map(_severity_style, subset=["Sévérité"])
+        st.dataframe(styled, width="stretch", height=300, hide_index=True)
+    else:
+        st.dataframe(df_anom, width="stretch", height=300, hide_index=True)
 
 with tab3:
     llm = bool(os.getenv("GROQ_API_KEY"))
