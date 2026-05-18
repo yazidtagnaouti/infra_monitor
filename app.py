@@ -262,17 +262,30 @@ with tab4:
         pct = stats["availability"]
         color = "#28a745" if pct >= 99 else "#fd7e14" if pct >= 95 else "#dc3545"
         fig_g = go.Figure(go.Indicator(
-            mode="gauge+number", value=pct,
-            title={"text": svc},
+            mode="gauge+number",
+            value=pct,
+            title={"text": svc, "x": 0.5, "xanchor": "center"},
             number={"suffix": "%"},
-            gauge={"axis": {"range": [80, 100]}, "bar": {"color": color},
-                   "threshold": {"line": {"color": "red", "width": 3}, "value": 99}},
+            gauge={
+                "axis": {"range": [80, 100]},
+                "bar": {"color": color},
+                "threshold": {"line": {"color": "red", "width": 3}, "value": 99},
+            },
         ))
-        fig_g.update_layout(height=220, margin=dict(t=30, b=10, l=20, r=20))
-        cols[i].plotly_chart(fig_g, width="stretch")
-        cols[i].caption(
-            f"{stats['online']} online · {stats['degraded']} dégradés · {stats['offline']} offline"
+        fig_g.update_layout(
+            height=220,
+            margin=dict(t=40, b=20, l=30, r=30),
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
         )
+        with cols[i]:
+            st.plotly_chart(fig_g, width="stretch")
+            st.markdown(
+                f"<p style='text-align:center;margin:0.25rem 0 0;'>"
+                f"{stats['online']} online · {stats['degraded']} dégradés · "
+                f"{stats['offline']} offline</p>",
+                unsafe_allow_html=True,
+            )
 
 with tab5:
     from datetime import datetime
