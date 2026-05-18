@@ -58,11 +58,6 @@ with st.sidebar:
 
     run = st.button("▶ Lancer le pipeline", type="primary", width="stretch")
 
-    with st.expander("Déploiement Streamlit Cloud"):
-        st.caption("En local : remplissez `config.py` (gitignoré) ou copiez `config.example.py`.")
-        st.code("GROQ_API_KEY = 'gsk_...'", language="toml")
-        st.caption("Cloud : Settings → Secrets → coller ci-dessus")
-
 
 @st.cache_data(show_spinner=False)
 def run_pipeline(data_str, _key):
