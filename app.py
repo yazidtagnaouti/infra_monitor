@@ -260,7 +260,7 @@ with tab4:
     cols = st.columns(3)
     for i, (svc, stats) in enumerate(services.items()):
         pct = stats["availability"]
-        color = "#28a745" if pct >= 99 else "#fd7e14" if pct >= 85 else "#dc3545"
+        color = "#28a745" if pct >= 90 else "#fd7e14" if pct >= 85 else "#dc3545"
         fig_g = go.Figure(go.Indicator(
             mode="gauge+number",
             value=pct,
