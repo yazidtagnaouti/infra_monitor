@@ -200,10 +200,26 @@ with tab4:
 
 with tab5:
     from datetime import datetime
-    st.download_button(
-        "⬇️ Télécharger le rapport",
-        data=json.dumps(report, ensure_ascii=False, indent=2),
-        file_name=f"rapport_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
-        mime="application/json",
-    )
+    ts = datetime.now().strftime("%Y%m%d_%H%M")
+    summary = report.get("analysis_summary") or {}
+
+    c1, c2 = st.columns(2)
+    with c1:
+        st.download_button(
+            "⬇️ Synthèse d'analyse (JSON)",
+            data=json.dumps(summary, ensure_ascii=False, indent=2),
+            file_name=f"analysis_summary_{ts}.json",
+            mime="application/json",
+        )
+    with c2:
+        st.download_button(
+            "⬇️ Rapport complet (JSON)",
+            data=json.dumps(report, ensure_ascii=False, indent=2),
+            file_name=f"rapport_{ts}.json",
+            mime="application/json",
+        )
+
+    st.subheader("Synthèse d'analyse")
+    st.json(summary)
+    st.subheader("Rapport complet")
     st.json(report)

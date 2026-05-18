@@ -10,13 +10,19 @@ def report_node(state):
     penalties += max(0, metrics.get("memory_usage", {}).get("p95", 0) - 70) * 0.4
     penalties += max(0, metrics.get("disk_usage",   {}).get("p95", 0) - 70) * 0.3
 
+    analysis_summary = {
+        **(state.get("analysis_summary") or {}),
+        "recommendations": state.get("recommendations") or [],
+    }
+
     report = {
-        "generated_at":   datetime.now(timezone.utc).isoformat(),
-        "period":         {"start": records[0]["timestamp"], "end": records[-1]["timestamp"]},
-        "total_records":  len(records),
-        "health_score":   max(0, round(100 - penalties)),
-        "metrics":        metrics,
-        "services":       state["services"],
+        "generated_at":     datetime.now(timezone.utc).isoformat(),
+        "period":           {"start": records[0]["timestamp"], "end": records[-1]["timestamp"]},
+        "total_records":    len(records),
+        "health_score":     max(0, round(100 - penalties)),
+        "analysis_summary": analysis_summary,
+        "metrics":          metrics,
+        "services":         state["services"],
         "anomalies": {
             "total":    len(anomalies),
             "critical": sum(1 for a in anomalies if a["severity"] == "critical"),
@@ -26,4 +32,4 @@ def report_node(state):
         "recommendations": state["recommendations"],
     }
 
-    return {"report": report}
+    return {"report": report, "analysis_summary": analysis_summary}

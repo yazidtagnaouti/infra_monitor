@@ -4,6 +4,7 @@ class InfraState(TypedDict):
     records: List[dict]
     metrics: dict
     services: dict
+    analysis_summary: Optional[dict]
     anomalies: List[dict]
     recommendations: List[dict]
     report: Optional[dict]
