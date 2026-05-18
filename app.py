@@ -34,7 +34,7 @@ SEVERITY_COLOR_MAP = {
     "Warnings": SEVERITY_COLORS["warning"],
 }
 
-st.set_page_config(page_title="Infrastructure Monitor", page_icon="🖥️", layout="wide")
+st.set_page_config(page_title="Infrastructure Monitor", layout="wide")
 
 # Inject Streamlit Cloud secrets into env
 try:
@@ -45,7 +45,7 @@ except Exception:
 
 # ── Sidebar ──────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.title("🖥️ Infra Monitor")
+    st.title("Infra Monitor")
     uploaded = st.file_uploader("Fichier JSON", type=["json"])
 
     api_key = os.getenv("GROQ_API_KEY", "")
@@ -54,9 +54,9 @@ with st.sidebar:
         if api_key:
             os.environ["GROQ_API_KEY"] = api_key
     else:
-        st.success("✅ Clé API détectée")
+        st.success("Clé API détectée")
 
-    run = st.button("▶ Lancer le pipeline", type="primary", width="stretch")
+    run = st.button("Lancer le pipeline", type="primary", width="stretch")
 
 
 @st.cache_data(show_spinner=False)
@@ -86,7 +86,7 @@ if run:
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────
 if "report" not in st.session_state:
-    st.info("⬆️ Chargez un fichier JSON puis cliquez **Lancer le pipeline**.")
+    st.info("Chargez un fichier JSON puis cliquez **Lancer le pipeline**.")
     st.stop()
 
 report  = st.session_state["report"]
@@ -114,7 +114,7 @@ k5.metric("Anomalies",    anom["total"],                        delta=f"{anom['c
 st.divider()
 
 # ── Onglets ────────────────────────────────────────────────────────────────────
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["📈 Métriques", "🚨 Anomalies", "💡 Recommandations", "🔧 Services", "📄 JSON"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["Métriques", "Anomalies", "Recommandations", "Services", "JSON"])
 
 with tab1:
     c1, c2 = st.columns(2)
@@ -240,13 +240,15 @@ with tab2:
 with tab3:
     llm = bool(os.getenv("GROQ_API_KEY"))
     st.caption(
-        "✅ Recommandations via Groq (LLM)"
+        "Recommandations via Groq (LLM)"
         if llm
-        else "ℹ️ Règles Python — ajoutez une clé Groq (config.py ou sidebar) pour l'enrichissement IA"
+        else "Règles Python — ajoutez une clé Groq (config.py ou sidebar) pour l'enrichissement IA"
     )
     for r in recos:
-        icon = "🔴" if r.get("priority") == "Critique" else "🟠" if r.get("priority") == "Haute" else "🔵"
-        with st.expander(f"{icon} [{r.get('id')}] {r.get('title')}", expanded=(r.get("priority") == "Critique")):
+        with st.expander(
+            f"[{r.get('priority')}] [{r.get('id')}] {r.get('title')}",
+            expanded=(r.get("priority") == "Critique"),
+        ):
             c1, c2, c3 = st.columns(3)
             c1.markdown(f"**Priorité** : {r.get('priority')}")
             c2.markdown(f"**Effort** : {r.get('effort')}")
@@ -268,7 +270,9 @@ with tab4:
         ))
         fig_g.update_layout(height=220, margin=dict(t=30, b=10, l=20, r=20))
         cols[i].plotly_chart(fig_g, width="stretch")
-        cols[i].caption(f"✅ {stats['online']} online · ⚠️ {stats['degraded']} dégradés · 🔴 {stats['offline']} offline")
+        cols[i].caption(
+            f"{stats['online']} online · {stats['degraded']} dégradés · {stats['offline']} offline"
+        )
 
 with tab5:
     from datetime import datetime
@@ -278,14 +282,14 @@ with tab5:
     c1, c2 = st.columns(2)
     with c1:
         st.download_button(
-            "⬇️ Synthèse d'analyse (JSON)",
+            "Synthèse d'analyse (JSON)",
             data=json.dumps(summary, ensure_ascii=False, indent=2),
             file_name=f"analysis_summary_{ts}.json",
             mime="application/json",
         )
     with c2:
         st.download_button(
-            "⬇️ Rapport complet (JSON)",
+            "Rapport complet (JSON)",
             data=json.dumps(report, ensure_ascii=False, indent=2),
             file_name=f"rapport_{ts}.json",
             mime="application/json",
