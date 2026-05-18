@@ -260,11 +260,10 @@ with tab4:
     cols = st.columns(3)
     for i, (svc, stats) in enumerate(services.items()):
         pct = stats["availability"]
-        color = "#28a745" if pct >= 99 else "#fd7e14" if pct >= 95 else "#dc3545"
+        color = "#28a745" if pct >= 99 else "#fd7e14" if pct >= 85 else "#dc3545"
         fig_g = go.Figure(go.Indicator(
             mode="gauge+number",
             value=pct,
-            title={"text": svc, "align": "center"},
             number={"suffix": "%"},
             gauge={
                 "axis": {"range": [80, 100]},
@@ -273,12 +272,17 @@ with tab4:
             },
         ))
         fig_g.update_layout(
-            height=220,
-            margin=dict(t=40, b=20, l=30, r=30),
+            height=200,
+            margin=dict(t=10, b=10, l=30, r=30),
             paper_bgcolor="rgba(0,0,0,0)",
             plot_bgcolor="rgba(0,0,0,0)",
         )
         with cols[i]:
+            st.markdown(
+                f"<p style='text-align:center;font-weight:600;font-size:1.1rem;margin:0 0 0.25rem;'>"
+                f"{svc}</p>",
+                unsafe_allow_html=True,
+            )
             st.plotly_chart(fig_g, width="stretch")
             st.markdown(
                 f"<p style='text-align:center;margin:0.25rem 0 0;'>"
