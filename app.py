@@ -264,7 +264,7 @@ with tab4:
         fig_g = go.Figure(go.Indicator(
             mode="gauge+number",
             value=pct,
-            title={"text": svc, "x": 0.5, "xanchor": "center"},
+            title={"text": svc, "align": "center"},
             number={"suffix": "%"},
             gauge={
                 "axis": {"range": [80, 100]},
