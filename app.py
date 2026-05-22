@@ -108,7 +108,7 @@ k5.metric("Anomalies",    anom["total"],                        delta=f"{anom['c
 
 st.divider()
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["Métriques", "Anomalies", "Recommandations", "Services", "JSON"])
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["Métriques", "Anomalies", "Recommandations", "Services", "JSON", "Predictions"])
 
 with tab1:
     c1, c2 = st.columns(2)
@@ -297,3 +297,7 @@ with tab5:
     st.json(summary)
     st.subheader("Rapport complet")
     st.json(report)
+
+with tab6:
+    st.subheader("Predictions")
+    st.json(report.get("predictions", {}))

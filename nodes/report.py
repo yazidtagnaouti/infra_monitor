@@ -36,6 +36,7 @@ def report_node(state):
             "by_metric": dict(Counter(a["metric"] for a in anomalies).most_common()),
         },
         "recommendations": state["recommendations"],
+        "predictions": state.get("predictions") or {},
     }
 
     return {"report": report, "analysis_summary": analysis_summary}

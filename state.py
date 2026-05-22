@@ -6,6 +6,7 @@ class InfraState(TypedDict):
     services: dict
     analysis_summary: Optional[dict]
     anomalies: List[dict]
+    predictions: Optional[dict]
     recommendations: List[dict]
     report: Optional[dict]
     errors: Optional[List[str]]  # started adding this, never wired up

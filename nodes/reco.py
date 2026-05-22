@@ -4,6 +4,11 @@ import re
 from collections import Counter
 from groq import Groq
 
+# Partie 2 – Améliorations (30 minutes)
+# Nœud d’Analyse Prédictive 
+# Objectif : Exploiter l’historique des données pour identifier les tendances émergentes, 
+# anticiper les défaillances et les surcharges potentielles, et ainsi optimiser la planification des ressources.
+
 
 def _groq_api_key():
     key = os.getenv("GROQ_API_KEY", "").strip()
